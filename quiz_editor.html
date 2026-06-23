@@ -733,6 +733,67 @@ header .badge {
 }
 .new-cat-name:focus { border-color: var(--accent); }
 .new-cat-name::placeholder { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* ═══════════════ IMAGE UPLOAD ═══════════════ */
+.img-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--surface2);
+  position: relative;
+}
+.img-upload-zone:hover { border-color: var(--accent); background: rgba(79,110,247,0.06); }
+.img-upload-zone.has-img { border-style: solid; border-color: var(--accent); padding: 8px; }
+
+.img-upload-label {
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+.img-upload-icon { font-size: 22px; display: block; margin-bottom: 6px; }
+
+.img-preview-wrap {
+  position: relative;
+  display: inline-block;
+}
+.img-preview-wrap img {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: 7px;
+  display: block;
+  object-fit: contain;
+}
+.img-remove-btn {
+  position: absolute;
+  top: -8px; right: -8px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+/* Image dans la carte */
+.card-image {
+  width: 100%;
+  max-height: 110px;
+  object-fit: contain;
+  display: block;
+  background: #f0f2f8;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e5e9f4;
+}
 </style>
 </head>
 <body>
@@ -804,6 +865,7 @@ header .badge {
 
 <!-- INPUT FILE HIDDEN -->
 <input type="file" id="file-input" accept=".json" style="display:none" onchange="loadFile(event)">
+<input type="file" id="img-input" accept="image/*" style="display:none" onchange="loadImage(event)">
 <div id="toast"></div>
 
 <script>
@@ -905,6 +967,29 @@ function exportJSON() {
 
 function importJSON() { document.getElementById('file-input').click(); }
 
+function loadImage(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const q = getActiveQ(); if (!q) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    q.image = ev.target.result;
+    saveToStorage();
+    renderEditor();
+    renderPreview();
+    toast('Image ajoutée !');
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function removeImage() {
+  const q = getActiveQ(); if (!q) return;
+  q.image = null;
+  saveToStorage();
+  renderEditor();
+  renderPreview();
+}
+
 function loadFile(e) {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -964,7 +1049,7 @@ function renderList() {
       <div class="q-item-dot" style="background:${cat.color}"></div>
       <div class="q-item-body">
         <div class="q-item-num">${cat.label} · Q${num}</div>
-        <div class="q-item-text">${q.question || '(sans question)'}</div>
+        <div class="q-item-text">${q.image ? '🖼 ' : ''}${q.question || '(sans question)'}</div>
       </div>
       ${q.multiCorrect ? '<div class="q-item-multi">✔✔</div>' : ''}
     </div>`;
@@ -987,6 +1072,7 @@ function newQuestion() {
     id: nextId(),
     category: filterCat !== 'all' ? filterCat : 'sit',
     question: '',
+    image: null,
     multiCorrect: false,
     answers: [
       {text:'',correct:false},
@@ -1075,6 +1161,23 @@ function renderEditor() {
         <div class="form-group">
           <label class="form-label">Question</label>
           <textarea class="form-textarea" id="ed-question" placeholder="Saisir la question…" oninput="liveUpdate()">${escHtml(q.question)}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Image <span style="opacity:0.5;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(optionnelle)</span></label>
+          ${q.image
+            ? `<div class="img-upload-zone has-img" onclick="document.getElementById('img-input').click()">
+                <div class="img-preview-wrap">
+                  <img src="${q.image}" alt="image question">
+                  <button class="img-remove-btn" onclick="event.stopPropagation();removeImage()" title="Supprimer l'image">×</button>
+                </div>
+               </div>`
+            : `<div class="img-upload-zone" onclick="document.getElementById('img-input').click()">
+                <span class="img-upload-icon">🖼</span>
+                <div class="img-upload-label">Cliquer pour ajouter une image</div>
+                <div style="font-size:10px;color:var(--text-dim);margin-top:4px">JPG, PNG, GIF, WEBP…</div>
+               </div>`
+          }
         </div>
 
         <div class="form-group">
@@ -1211,6 +1314,7 @@ function buildCard(q, num) {
         <div class="card-header-num">Q${num}</div>
       </div>
       <div class="card-question">${escHtml(q.question) || 'Question…'}</div>
+      ${q.image ? `<img class="card-image" src="${q.image}" alt="">` : ''}
       <div class="card-answers">${answers}</div>
     </div>
   `;
