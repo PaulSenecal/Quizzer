@@ -40,11 +40,12 @@ body {
   font-family: 'Literata', Georgia, serif;
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ═══════════════ LAYOUT ═══════════════ */
-#app { display: flex; flex-direction: column; min-height: 100vh; }
+#app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 header {
   background: var(--surface);
@@ -89,7 +90,8 @@ header .badge {
   display: grid;
   grid-template-columns: 320px 1fr;
   flex: 1;
-  height: calc(100vh - 57px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ═══════════════ SIDEBAR ═══════════════ */
@@ -99,6 +101,8 @@ header .badge {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%;
+  min-height: 0;
 }
 
 .sidebar-top {
@@ -193,6 +197,8 @@ header .badge {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%;
+  min-height: 0;
 }
 
 .editor-toolbar {
@@ -826,10 +832,71 @@ header .badge {
 
     <!-- EDITOR -->
     <div class="editor-area" id="editor-area">
-      <div class="empty-state">
+
+      <!-- État vide -->
+      <div class="empty-state" id="empty-state">
         <div class="icon">📋</div>
         <div>Sélectionne une question<br>ou crée-en une nouvelle</div>
       </div>
+
+      <!-- Éditeur persistant -->
+      <div id="editor-content" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+
+        <div class="editor-toolbar">
+          <button class="btn btn-danger btn-sm" onclick="deleteQuestion()">🗑 Supprimer</button>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-success btn-sm" onclick="saveActiveQuestion();toast('Sauvegardé !')">💾 Sauvegarder</button>
+          </div>
+        </div>
+
+        <div class="editor-scroll">
+          <div class="editor-form">
+
+            <div class="form-group">
+              <label class="form-label">Catégorie</label>
+              <div class="cat-select-wrap">
+                <div class="cat-dot-indicator" id="cat-dot"></div>
+                <select class="form-select" id="ed-category" onchange="onCatChange()"></select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Question</label>
+              <textarea class="form-textarea" id="ed-question" placeholder="Saisir la question…" oninput="liveUpdate()"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Image <span style="opacity:0.5;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(optionnelle)</span></label>
+              <div id="img-zone-wrap"></div>
+            </div>
+
+            <div class="form-group">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <label class="form-label" style="margin:0" id="answers-count-label">Réponses</label>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div class="multi-toggle" onclick="toggleMulti()">
+                    <div class="toggle-track" id="multi-track">
+                      <div class="toggle-thumb"></div>
+                    </div>
+                    <span class="toggle-label">Réponses multiples</span>
+                  </div>
+                </div>
+              </div>
+              <div class="answers-list" id="answers-list"></div>
+              <div id="add-answer-wrap"></div>
+            </div>
+
+          </div>
+
+          <!-- PREVIEW -->
+          <div class="preview-panel">
+            <h3>Aperçu carte</h3>
+            <div id="card-preview"></div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -1001,7 +1068,8 @@ function loadFile(e) {
         saveToStorage();
         renderList();
         activeId = null;
-        document.getElementById('editor-area').innerHTML = `<div class="empty-state"><div class="icon">📋</div><div>Sélectionne une question<br>ou crée-en une nouvelle</div></div>`;
+        document.getElementById('empty-state').style.display = 'flex';
+        document.getElementById('editor-content').style.display = 'none';
         toast(data.length + ' questions chargées !');
       }
     } catch(err) { alert('Fichier JSON invalide'); }
@@ -1096,7 +1164,10 @@ function deleteQuestion() {
   saveToStorage();
   renderList();
   if (activeId) renderEditor();
-  else document.getElementById('editor-area').innerHTML = `<div class="empty-state"><div class="icon">📋</div><div>Sélectionne une question<br>ou crée-en une nouvelle</div></div>`;
+  else {
+    document.getElementById('empty-state').style.display = 'flex';
+    document.getElementById('editor-content').style.display = 'none';
+  }
 }
 
 function getActiveQ() { return questions.find(q => q.id === activeId); }
@@ -1121,13 +1192,46 @@ function renderEditor() {
   const q = getActiveQ(); if (!q) return;
   const cat = getCat(q.category);
 
-  // Cat options
-  const catOpts = CATEGORIES.map(c =>
+  // Afficher l'éditeur, cacher l'état vide
+  document.getElementById('empty-state').style.display = 'none';
+  const ec = document.getElementById('editor-content');
+  ec.style.display = 'flex';
+  ec.style.flex = '1';
+
+  // Catégorie
+  const catSel = document.getElementById('ed-category');
+  catSel.innerHTML = CATEGORIES.map(c =>
     `<option value="${c.id}" ${c.id===q.category?'selected':''}>${c.label}</option>`
   ).join('');
+  document.getElementById('cat-dot').style.background = cat.color;
 
-  // Answers
-  const answersHTML = q.answers.map((a, i) => `
+  // Question
+  document.getElementById('ed-question').value = q.question || '';
+
+  // Image zone
+  const imgWrap = document.getElementById('img-zone-wrap');
+  if (q.image) {
+    imgWrap.innerHTML = `<div class="img-upload-zone has-img" onclick="document.getElementById('img-input').click()">
+      <div class="img-preview-wrap">
+        <img src="${q.image}" alt="image question">
+        <button class="img-remove-btn" onclick="event.stopPropagation();removeImage()" title="Supprimer l'image">×</button>
+      </div>
+    </div>`;
+  } else {
+    imgWrap.innerHTML = `<div class="img-upload-zone" onclick="document.getElementById('img-input').click()">
+      <span class="img-upload-icon">🖼</span>
+      <div class="img-upload-label">Cliquer pour ajouter une image</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">JPG, PNG, GIF, WEBP…</div>
+    </div>`;
+  }
+
+  // Multi toggle
+  const track = document.getElementById('multi-track');
+  track.classList.toggle('on', q.multiCorrect);
+
+  // Réponses
+  document.getElementById('answers-count-label').textContent = `Réponses (${q.answers.length}/6)`;
+  document.getElementById('answers-list').innerHTML = q.answers.map((a, i) => `
     <div class="answer-row-editor" id="ans-row-${i}">
       <div class="answer-letter-badge" style="background:${cat.color}">${LETTERS[i]}</div>
       <div class="answer-input-wrap">
@@ -1138,76 +1242,9 @@ function renderEditor() {
     </div>
   `).join('');
 
-  document.getElementById('editor-area').innerHTML = `
-    <div class="editor-toolbar">
-      <button class="btn btn-danger btn-sm" onclick="deleteQuestion()">🗑 Supprimer</button>
-      <div style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn btn-success btn-sm" onclick="saveActiveQuestion();toast('Sauvegardé !')">💾 Sauvegarder</button>
-      </div>
-    </div>
-    <div class="editor-scroll">
-      <div class="editor-form">
-
-        <div class="form-group">
-          <label class="form-label">Catégorie</label>
-          <div class="cat-select-wrap">
-            <div class="cat-dot-indicator" id="cat-dot" style="background:${cat.color}"></div>
-            <select class="form-select" id="ed-category" onchange="onCatChange()">
-              ${catOpts}
-            </select>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Question</label>
-          <textarea class="form-textarea" id="ed-question" placeholder="Saisir la question…" oninput="liveUpdate()">${escHtml(q.question)}</textarea>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Image <span style="opacity:0.5;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0">(optionnelle)</span></label>
-          ${q.image
-            ? `<div class="img-upload-zone has-img" onclick="document.getElementById('img-input').click()">
-                <div class="img-preview-wrap">
-                  <img src="${q.image}" alt="image question">
-                  <button class="img-remove-btn" onclick="event.stopPropagation();removeImage()" title="Supprimer l'image">×</button>
-                </div>
-               </div>`
-            : `<div class="img-upload-zone" onclick="document.getElementById('img-input').click()">
-                <span class="img-upload-icon">🖼</span>
-                <div class="img-upload-label">Cliquer pour ajouter une image</div>
-                <div style="font-size:10px;color:var(--text-dim);margin-top:4px">JPG, PNG, GIF, WEBP…</div>
-               </div>`
-          }
-        </div>
-
-        <div class="form-group">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <label class="form-label" style="margin:0">Réponses (${q.answers.length}/6)</label>
-            <div style="display:flex;align-items:center;gap:12px">
-              <div class="multi-toggle" onclick="toggleMulti()">
-                <div class="toggle-track ${q.multiCorrect?'on':''}" id="multi-track">
-                  <div class="toggle-thumb"></div>
-                </div>
-                <span class="toggle-label">Réponses multiples</span>
-              </div>
-            </div>
-          </div>
-          <div class="answers-list" id="answers-list">
-            ${answersHTML}
-          </div>
-          ${q.answers.length < 6 ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%" onclick="addAnswer()">+ Ajouter une réponse</button>` : ''}
-        </div>
-
-      </div>
-
-      <!-- PREVIEW -->
-      <div class="preview-panel">
-        <h3>Aperçu carte</h3>
-        <div id="card-preview"></div>
-      </div>
-
-    </div>
-  `;
+  document.getElementById('add-answer-wrap').innerHTML = q.answers.length < 6
+    ? `<button class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%" onclick="addAnswer()">+ Ajouter une réponse</button>`
+    : '';
 
   document.getElementById('ed-multi').dataset.on = q.multiCorrect ? '1' : '0';
   renderPreview();
